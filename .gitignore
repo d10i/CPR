@@ -1,0 +1,6 @@
+*.beam
+*/*.beam
+*.iml
+*/*.iml
+*/.idea
+/.idea
