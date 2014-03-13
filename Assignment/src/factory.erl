@@ -13,11 +13,12 @@ surfboard(ReferenceId, N) -> call(ReferenceId, {surfboard, N}).
 skateboard(ReferenceId, N) -> call(ReferenceId, {skateboard, N}).
 view_cart(ReferenceId) -> call(ReferenceId, {view_cart}).
 billing_address(ReferenceId, BillingAddress) -> call(ReferenceId, {billing_address, BillingAddress}).
-credit_card(ReferenceId, CardNumber, CardExp) -> call(ReferenceId, {credit_card, CardNumber, CardExp}).
+credit_card(ReferenceId, CardNumber, ExpirationDate) -> call(ReferenceId, {credit_card, CardNumber, ExpirationDate}).
 buy(ReferenceId) -> call(ReferenceId, {buy}).
 
 start() ->
   register(factory, spawn(factory, init, [])),
+  cc:start(),
   ok.
 
 init() ->
@@ -47,7 +48,8 @@ get_session(ReferenceId, Db) ->
 loop(Db) ->
   receive
     {request, Pid, stop} ->
-% TODO: stop all sessions?
+      % TODO: stop all sessions?
+      cc:stop(),
       reply(Pid, ok);
 
     {request, Pid, {start_link, UserName}} ->
