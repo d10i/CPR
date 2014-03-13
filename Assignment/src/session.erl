@@ -15,7 +15,20 @@ init(UserName) ->
   loop(new_data(), UserName).
 
 call(Session, Message) ->
-  Session ! {request, Message}.
+  Session ! {request, self(), Message},
+  receive
+    {reply, UserName, {Action, Reply}} ->
+      webclient:reply(UserName, {Action, Reply}),
+      Reply;
+    {reply, Reply} ->
+      Reply
+  end.
+
+reply(Pid, Username, Message) ->
+  Pid ! {reply, Username, Message}.
+
+reply(Pid, Reply) ->
+  Pid ! {reply, Reply}.
 
 new_data() ->
   {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.
@@ -27,22 +40,6 @@ new_status(OldCount, NewCount) ->
     Diff < 0 -> {removed, -Diff}
   end.
 
-output_action_description({Action, Diff}, NewCount, Item, UserName) ->
-  FirstPart = case Action of
-    added -> io_lib:format("Added ~p ~s to", [Diff, Item]);
-    removed -> io_lib:format("Removed ~p ~s from", [Diff, Item])
-  end,
-  io:format(FirstPart ++ " the cart of ~s. Total number of ~s: ~p~n", [UserName, Item, NewCount]).
-
-output_items_list(Cart) ->
-  output_items_list(Cart, []).
-
-output_items_list([], Strings) ->
-  io:format(string:join(Strings, ", "));
-output_items_list([{_, 0} | Items], Strings) ->
-  output_items_list(Items, Strings);
-output_items_list([{Item, Count} | Items], Strings) ->
-  output_items_list(Items, lists:append(Strings, [io_lib:format("~p ~ss", [Count, atom_to_list(Item)])])).
 
 total_price([{ski, SkiCount}, {bike, BikeCount}, {surfboard, SkateboardCount}, {skateboard, SurfboardCount}]) ->
   price(ski, SkiCount) +
@@ -76,126 +73,113 @@ error_items([{address, Address}, {name, Name}, {city, City}, {country, Country}]
 
 loop(Data, UserName) ->
   receive
-    {request, stop} ->
-      ok;
+    {request, Pid, stop} ->
+      reply(Pid, ok);
 
-    {request, {ski, N}} ->
+    {request, Pid, {ski, N}} ->
       case Data of
         {[{ski, M}, R2, R3, R4], Ba, Cc} ->
           NewCount = max(M + N, 0),
           NewData = {[{ski, NewCount}, R2, R3, R4], Ba, Cc},
           NewStatus = new_status(M, NewCount),
-          output_action_description(NewStatus, NewCount, "skis", UserName),
-
-          webclient:reply(UserName, [NewStatus, {total, NewCount}]),
+          reply(Pid, UserName, {ski, [NewStatus, {total, NewCount}]}),
           loop(NewData, UserName)
       end ;
 
-    {request, {bike, N}} ->
+    {request, Pid, {bike, N}} ->
       case Data of
         {[R1, {bike, M}, R3, R4], Ba, Cc} ->
           NewCount = max(M + N, 0),
           NewData = {[R1, {bike, NewCount}, R3, R4], Ba, Cc},
           NewStatus = new_status(M, NewCount),
-          output_action_description(NewStatus, NewCount, "bikes", UserName),
-          webclient:reply(UserName, [NewStatus, {total, NewCount}]),
+          reply(Pid, UserName, {bike, [NewStatus, {total, NewCount}]}),
           loop(NewData, UserName)
       end ;
 
-    {request, {surfboard, N}} ->
+    {request, Pid, {surfboard, N}} ->
       case Data of
         {[R1, R2, {surfboard, M}, R4], Ba, Cc} ->
           NewCount = max(M + N, 0),
           NewData = {[R1, R2, {surfboard, NewCount}, R4], Ba, Cc},
           NewStatus = new_status(M, NewCount),
-          output_action_description(NewStatus, NewCount, "surfboards", UserName),
-          webclient:reply(UserName, [NewStatus, {total, NewCount}]),
+          reply(Pid, UserName, {surfboard, [NewStatus, {total, NewCount}]}),
           loop(NewData, UserName)
       end ;
 
-    {request, {skateboard, N}} ->
+    {request, Pid, {skateboard, N}} ->
       case Data of
         {[R1, R2, R3, {skateboard, M}], Ba, Cc} ->
           NewCount = max(M + N, 0),
           NewData = {[R1, R2, R3, {skateboard, NewCount}], Ba, Cc},
           NewStatus = new_status(M, NewCount),
-          output_action_description(NewStatus, NewCount, "skateboards", UserName),
-          webclient:reply(UserName, [NewStatus, {total, NewCount}]),
+          reply(Pid, UserName, {skateboard, [NewStatus, {total, NewCount}]}),
           loop(NewData, UserName)
       end ;
 
-    {request, {view_cart}} ->
+    {request, Pid, {view_cart}} ->
       case Data of
         {Cart, _, _} ->
-          TotalPrice = total_price(Cart),
-          case Cart of
-            [{ski, N1}, {bike, N2}, {surfboard, N3}, {skateboard, N4}] ->
-              io:format("The shopping cart for ~s is:~n~n", [UserName]),
-              io:format("ski: ~p~nbike: ~p~nsurfboard: ~p~nskateboard: ~p~n~n", [N1, N2, N3, N4]),
-              io:format("Total Price: ~s~.2f~n", [[163], TotalPrice])
-          end,
-          webclient:reply(UserName, {Cart, TotalPrice}),
+          reply(Pid, UserName, {view_cart, {Cart, total_price(Cart)}}),
           loop(Data, UserName)
       end ;
 
-    {request, {billing_address, BillingAddress}} ->
+    {request, Pid, {billing_address, BillingAddress}} ->
       case error_items(BillingAddress) of
         [] ->
           case Data of
             {Cart, _, Cc} ->
               NewData = {Cart, BillingAddress, Cc},
-              webclient:reply(UserName, ok),
+              reply(Pid, UserName, {billing_address, ok}),
               loop(NewData, UserName)
           end ;
         Items ->
-          webclient:reply(UserName, {error, Items}),
+          reply(Pid, UserName, {billing_address, {error, Items}}),
           loop(Data, UserName)
       end ;
 
-    {request, {credit_card, CardNumber, {ExpYear, ExpMonth}}} ->
+    {request, Pid, {credit_card, CardNumber, {ExpYear, ExpMonth}}} ->
       case Data of
         {Cart, BillingAddress, _} ->
           case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
             true ->
               NewData = {Cart, BillingAddress, [CardNumber, {ExpYear, ExpMonth}]},
-              webclient:reply(UserName, ok),
+              reply(Pid, UserName, {credit_card, ok}),
               loop(NewData, UserName);
             false ->
-              webclient:reply(UserName, {error, card_invalid}),
+              reply(Pid, UserName, {credit_card, {error, card_invalid}}),
               loop(Data, UserName)
           end
       end ;
 
-    {request, {buy}} ->
+    {request, Pid, {buy}} ->
       case Data of
-        {Cart, BillingAddress, [CardNumber, {ExpYear, ExpMonth}]} ->
-          case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
-            true ->
-              case error_items(BillingAddress) of
-                [] ->
-                  TotalPrice = total_price(Cart),
-                  case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
-                    {ok, _} ->
-                      NewData = new_data(),
-                      io:format("~s just bought ", [UserName]),
-                      output_items_list(Cart),
-                      io:format(". The total price is ~s~.2f.~n", [[163], TotalPrice]),
-                      webclient:reply(UserName, {ok, {Cart, TotalPrice}}),
-                      loop(NewData, UserName);
-                    {error, _} ->
-                      webclient:reply(UserName, {error, credit_info}),
+        {Cart, BillingAddress, Cc} ->
+          case Cc of
+            [CardNumber, {ExpYear, ExpMonth}] ->
+              case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
+                true ->
+                  case error_items(BillingAddress) of
+                    [] ->
+                      TotalPrice = total_price(Cart),
+                      case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
+                        {ok, _} ->
+                          NewData = new_data(),
+                          reply(Pid, UserName, {buy, {ok, {Cart, TotalPrice}}}),
+                          loop(NewData, UserName);
+                        {error, _} ->
+                          reply(Pid, UserName, {buy, {error, credit_info}}),
+                          loop(Data, UserName)
+                      end ;
+                    _ ->
+                      reply(Pid, UserName, {buy, {error, billing_info}}),
                       loop(Data, UserName)
                   end ;
-                _ ->
-                  webclient:reply(UserName, {error, billing_info}),
+                false ->
+                  reply(Pid, UserName, {buy, {error, credit_info}}),
                   loop(Data, UserName)
               end ;
-            false ->
-              webclient:reply(UserName, {error, credit_info}),
-              loop(Data, UserName)
-          end ;
-        {ok, _, _} ->
-          webclient:reply(UserName, {error, credit_info}),
-          loop(Data, UserName)
+            [] ->
+              reply(Pid, UserName, {buy, {error, credit_info}})
+          end
       end
   end.

@@ -21,7 +21,6 @@ start() ->
   ok.
 
 init() ->
-  webclient:start(),
   loop(db:new()).
 
 call(Message) ->
@@ -39,9 +38,9 @@ call(ReferenceId, Message) ->
 reply(Pid, Message) ->
   Pid ! {reply, Message}.
 
-get_username_and_session(ReferenceId, Db) ->
+get_session(ReferenceId, Db) ->
   case db:read(ReferenceId, Db) of
-    {ok, UserNameAndSession} -> UserNameAndSession;
+    {ok, Session} -> Session;
     {error, _} -> error
   end.
 
@@ -49,20 +48,17 @@ loop(Db) ->
   receive
     {request, Pid, stop} ->
 % TODO: stop all sessions?
-      webclient:stop(),
       reply(Pid, ok);
 
     {request, Pid, {start_link, UserName}} ->
       ReferenceId = make_ref(),
-      webclient:associate_pid_to_username(UserName, Pid),
       Session = spawn(session, init, [UserName]),
-      NewDb = db:write(ReferenceId, {UserName, Session}, Db),
-      webclient:reply(UserName, {ok, ReferenceId}),
+      NewDb = db:write(ReferenceId, Session, Db),
+      reply(Pid, {ok, ReferenceId}),
       loop(NewDb);
 
     {request, Pid, ReferenceId, Message} ->
-      {UserName, Session} = get_username_and_session(ReferenceId, Db),
-      webclient:associate_pid_to_username(UserName, Pid),
-      session:call(Session, Message),
+      Session = get_session(ReferenceId, Db),
+      reply(Pid, session:call(Session, Message)),
       loop(Db)
   end.
