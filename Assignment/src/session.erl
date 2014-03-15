@@ -3,19 +3,22 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1]).
--export([call/2]).
+-export([start_link/1]).
+-export([call/2, stop/1]).
 
 %% gen_server
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
   code_change/3]).
 
 %% API
-start(UserName) ->
+start_link(UserName) ->
   gen_server:start(?MODULE, [UserName], []).
 
 call(Session, Message) ->
   gen_server:call(Session, Message).
+
+stop(Session) ->
+  gen_server:call(Session, stop).
 
 %% gen_server callbacks
 init([UserName]) ->
@@ -114,7 +117,13 @@ handle_call({buy}, _From, {Data, UserName}) ->
         [] ->
           reply({buy, {error, credit_info}}, {Data, UserName})
       end
-  end.
+  end;
+
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State};
+
+handle_call(_Msg, _From, State) ->
+  {noreply, State}.
 
 handle_cast(_Request, State) ->
   {noreply, State}.

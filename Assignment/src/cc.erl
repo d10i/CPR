@@ -3,16 +3,16 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
--export([is_valid/3, transaction/4, add_credit_card/4]).
+-export([start_link/2]).
+-export([is_valid/3, transaction/4, add_credit_card/4, stop/0]).
 
 %% gen_server
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
   code_change/3]).
 
 %% API
-start_link() ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(Name, Supervisor) ->
+  gen_server:start_link({local, Name}, ?MODULE, [Supervisor], []).
 
 is_valid(BillingAddress, CardNumber, ExpirationDate) ->
   gen_server:call(cc, {is_valid, BillingAddress, CardNumber, ExpirationDate}).
@@ -20,9 +20,11 @@ transaction(BillingAddress, CardNumber, ExpirationDate, Price) ->
   gen_server:call(cc, {transaction, BillingAddress, CardNumber, ExpirationDate, Price}).
 add_credit_card(BillingAddress, CardNumber, ExpirationDate, Balance) ->
   gen_server:call(cc, {add_credit_card, BillingAddress, CardNumber, ExpirationDate, Balance}).
+stop() ->
+  gen_server:call(cc, stop).
 
 %% gen_server callbacks
-init(_Args) ->
+init(_Supervisor) ->
   {ok, db:new()}.
 
 handle_call({is_valid, BillingAddress, CardNumber, {ExpYear, ExpMonth}}, _Pid, Db) ->
@@ -58,7 +60,13 @@ handle_call({add_credit_card, BillingAddress, CardNumber, {ExpYear, ExpMonth}, B
       {reply, ok, NewDb};
     {ok, _} ->
       {reply, {error, credit_card_exists_already}, Db}
-  end.
+  end;
+
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State};
+
+handle_call(_Msg, _From, State) ->
+  {noreply, State}.
 
 handle_cast(_Request, State) ->
   {noreply, State}.
