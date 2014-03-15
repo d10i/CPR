@@ -1,37 +1,139 @@
 -module(session).
 
+-behaviour(gen_server).
+
 %% API
+-export([start/1]).
 -export([call/2]).
--export([init/1]).
--export([stop/1]).
 
-%% Assuming a UserName can only be associated with one ReferenceId. This is because the API specs of webclient:reply
-%% is reply(UserName, Message). For this reason, calling start_link with a UserName that is already associated with
-%% another ReferenceId, will delete all the data for that ReferenceId and create a new one.
+%% gen_server
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+  code_change/3]).
 
-stop(Session) -> call(Session, stop).
-
-init(UserName) ->
-  loop(new_data(), UserName).
+%% API
+start(UserName) ->
+  gen_server:start(?MODULE, [UserName], []).
 
 call(Session, Message) ->
-  Session ! {request, self(), Message},
-  receive
-    {reply, UserName, {Action, Reply}} ->
-      webclient:reply(UserName, {Action, Reply}),
-      Reply;
-    {reply, Reply} ->
-      Reply
+  gen_server:call(Session, Message).
+
+%% gen_server callbacks
+init([UserName]) ->
+  {ok, {new_data(), UserName}}.
+
+
+handle_call({ski, N}, _From, {Data, UserName}) ->
+  case Data of
+    {[{ski, M}, R2, R3, R4], Ba, Cc} ->
+      NewCount = max(M + N, 0),
+      NewData = {[{ski, NewCount}, R2, R3, R4], Ba, Cc},
+      NewStatus = new_status(M, NewCount),
+      reply({ski, [NewStatus, {total, NewCount}]}, {NewData, UserName})
+  end ;
+
+handle_call({bike, N}, _From, {Data, UserName}) ->
+  case Data of
+    {[R1, {bike, M}, R3, R4], Ba, Cc} ->
+      NewCount = max(M + N, 0),
+      NewData = {[R1, {bike, NewCount}, R3, R4], Ba, Cc},
+      NewStatus = new_status(M, NewCount),
+      reply({bike, [NewStatus, {total, NewCount}]}, {NewData, UserName})
+  end ;
+
+handle_call({surfboard, N}, _From, {Data, UserName}) ->
+  case Data of
+    {[R1, R2, {surfboard, M}, R4], Ba, Cc} ->
+      NewCount = max(M + N, 0),
+      NewData = {[R1, R2, {surfboard, NewCount}, R4], Ba, Cc},
+      NewStatus = new_status(M, NewCount),
+      reply({surfboard, [NewStatus, {total, NewCount}]}, {NewData, UserName})
+  end ;
+
+handle_call({skateboard, N}, _From, {Data, UserName}) ->
+  case Data of
+    {[R1, R2, R3, {skateboard, M}], Ba, Cc} ->
+      NewCount = max(M + N, 0),
+      NewData = {[R1, R2, R3, {skateboard, NewCount}], Ba, Cc},
+      NewStatus = new_status(M, NewCount),
+      reply({skateboard, [NewStatus, {total, NewCount}]}, {NewData, UserName})
+  end ;
+
+handle_call({view_cart}, _From, {Data, UserName}) ->
+  case Data of
+    {Cart, _, _} ->
+      reply({view_cart, {Cart, total_price(Cart)}}, {Data, UserName})
+  end ;
+
+handle_call({billing_address, BillingAddress}, _From, {Data, UserName}) ->
+  case error_items(BillingAddress) of
+    [] ->
+      case Data of
+        {Cart, _, Cc} ->
+          NewData = {Cart, BillingAddress, Cc},
+          reply({billing_address, ok}, {NewData, UserName})
+      end ;
+    Items ->
+      reply({billing_address, {error, Items}}, {Data, UserName})
+  end ;
+
+handle_call({credit_card, CardNumber, {ExpYear, ExpMonth}}, _From, {Data, UserName}) ->
+  case Data of
+    {Cart, BillingAddress, _} ->
+      case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
+        true ->
+          NewData = {Cart, BillingAddress, [CardNumber, {ExpYear, ExpMonth}]},
+          reply({credit_card, ok}, {NewData, UserName});
+        false ->
+          reply({credit_card, {error, card_invalid}}, {Data, UserName})
+      end
+  end ;
+
+handle_call({buy}, _From, {Data, UserName}) ->
+  case Data of
+    {Cart, BillingAddress, Cc} ->
+      case Cc of
+        [CardNumber, {ExpYear, ExpMonth}] ->
+          case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
+            true ->
+              case error_items(BillingAddress) of
+                [] ->
+                  TotalPrice = total_price(Cart),
+                  case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
+                    {ok, _} ->
+                      NewData = new_data(),
+                      reply({buy, {ok, {Cart, TotalPrice}}}, {NewData, UserName});
+                    {error, _} ->
+                      reply({buy, {error, credit_info}}, {Data, UserName})
+                  end ;
+                _ ->
+                  reply({buy, {error, billing_info}}, {Data, UserName})
+              end ;
+            false ->
+              reply({buy, {error, credit_info}}, {Data, UserName})
+          end ;
+        [] ->
+          reply({buy, {error, credit_info}}, {Data, UserName})
+      end
   end.
 
-reply(Pid, Username, Message) ->
-  Pid ! {reply, Username, Message}.
+handle_cast(_Request, State) ->
+  {noreply, State}.
 
-reply(Pid, Reply) ->
-  Pid ! {reply, Reply}.
+handle_info(_Info, State) ->
+  {noreply, State}.
+
+terminate(_Reason, _State) ->
+  ok.
+
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
 
 new_data() ->
   {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.
+
+reply({Action, Reply}, {Data, UserName}) ->
+  webclient:reply(UserName, {Action, Reply}),
+  {reply, Reply, {Data, UserName}}.
 
 new_status(OldCount, NewCount) ->
   Diff = NewCount - OldCount,
@@ -70,116 +172,3 @@ error_items([{address, Address}, {name, Name}, {city, City}, {country, Country}]
     false -> [country]
   end,
   lists:merge([Err1, Err2, Err3, Err4]).
-
-loop(Data, UserName) ->
-  receive
-    {request, Pid, stop} ->
-      reply(Pid, ok);
-
-    {request, Pid, {ski, N}} ->
-      case Data of
-        {[{ski, M}, R2, R3, R4], Ba, Cc} ->
-          NewCount = max(M + N, 0),
-          NewData = {[{ski, NewCount}, R2, R3, R4], Ba, Cc},
-          NewStatus = new_status(M, NewCount),
-          reply(Pid, UserName, {ski, [NewStatus, {total, NewCount}]}),
-          loop(NewData, UserName)
-      end ;
-
-    {request, Pid, {bike, N}} ->
-      case Data of
-        {[R1, {bike, M}, R3, R4], Ba, Cc} ->
-          NewCount = max(M + N, 0),
-          NewData = {[R1, {bike, NewCount}, R3, R4], Ba, Cc},
-          NewStatus = new_status(M, NewCount),
-          reply(Pid, UserName, {bike, [NewStatus, {total, NewCount}]}),
-          loop(NewData, UserName)
-      end ;
-
-    {request, Pid, {surfboard, N}} ->
-      case Data of
-        {[R1, R2, {surfboard, M}, R4], Ba, Cc} ->
-          NewCount = max(M + N, 0),
-          NewData = {[R1, R2, {surfboard, NewCount}, R4], Ba, Cc},
-          NewStatus = new_status(M, NewCount),
-          reply(Pid, UserName, {surfboard, [NewStatus, {total, NewCount}]}),
-          loop(NewData, UserName)
-      end ;
-
-    {request, Pid, {skateboard, N}} ->
-      case Data of
-        {[R1, R2, R3, {skateboard, M}], Ba, Cc} ->
-          NewCount = max(M + N, 0),
-          NewData = {[R1, R2, R3, {skateboard, NewCount}], Ba, Cc},
-          NewStatus = new_status(M, NewCount),
-          reply(Pid, UserName, {skateboard, [NewStatus, {total, NewCount}]}),
-          loop(NewData, UserName)
-      end ;
-
-    {request, Pid, {view_cart}} ->
-      case Data of
-        {Cart, _, _} ->
-          reply(Pid, UserName, {view_cart, {Cart, total_price(Cart)}}),
-          loop(Data, UserName)
-      end ;
-
-    {request, Pid, {billing_address, BillingAddress}} ->
-      case error_items(BillingAddress) of
-        [] ->
-          case Data of
-            {Cart, _, Cc} ->
-              NewData = {Cart, BillingAddress, Cc},
-              reply(Pid, UserName, {billing_address, ok}),
-              loop(NewData, UserName)
-          end ;
-        Items ->
-          reply(Pid, UserName, {billing_address, {error, Items}}),
-          loop(Data, UserName)
-      end ;
-
-    {request, Pid, {credit_card, CardNumber, {ExpYear, ExpMonth}}} ->
-      case Data of
-        {Cart, BillingAddress, _} ->
-          case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
-            true ->
-              NewData = {Cart, BillingAddress, [CardNumber, {ExpYear, ExpMonth}]},
-              reply(Pid, UserName, {credit_card, ok}),
-              loop(NewData, UserName);
-            false ->
-              reply(Pid, UserName, {credit_card, {error, card_invalid}}),
-              loop(Data, UserName)
-          end
-      end ;
-
-    {request, Pid, {buy}} ->
-      case Data of
-        {Cart, BillingAddress, Cc} ->
-          case Cc of
-            [CardNumber, {ExpYear, ExpMonth}] ->
-              case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
-                true ->
-                  case error_items(BillingAddress) of
-                    [] ->
-                      TotalPrice = total_price(Cart),
-                      case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
-                        {ok, _} ->
-                          NewData = new_data(),
-                          reply(Pid, UserName, {buy, {ok, {Cart, TotalPrice}}}),
-                          loop(NewData, UserName);
-                        {error, _} ->
-                          reply(Pid, UserName, {buy, {error, credit_info}}),
-                          loop(Data, UserName)
-                      end ;
-                    _ ->
-                      reply(Pid, UserName, {buy, {error, billing_info}}),
-                      loop(Data, UserName)
-                  end ;
-                false ->
-                  reply(Pid, UserName, {buy, {error, credit_info}}),
-                  loop(Data, UserName)
-              end ;
-            [] ->
-              reply(Pid, UserName, {buy, {error, credit_info}})
-          end
-      end
-  end.
