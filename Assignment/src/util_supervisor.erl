@@ -17,23 +17,31 @@ init([]) ->
   io:format("Starting util_supervisor~n"),
   {ok,
     {
-      {one_for_one, 1, 60},
+      {one_for_one, 5, 60},
       [
         {
           cc,
           {cc, start_link, []},
           permanent,
-          30000,
+          1000,
           worker,
-          [cc, io]
+          [cc]
         },
         {
           address_verifier,
           {address_verifier, start_link, []},
           permanent,
-          30000,
+          1000,
           worker,
-          [address_verifier, io]
+          [address_verifier]
+        },
+        {
+          db_server,
+          {db_server, start_link, []},
+          permanent,
+          3000,
+          worker,
+          [db_server]
         }
       ]
     }

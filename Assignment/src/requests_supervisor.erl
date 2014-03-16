@@ -18,15 +18,15 @@ init([]) ->
   {
     ok,
     {
-      {simple_one_for_one, 5, 3600},
+      {simple_one_for_one, 10, 10},
       [
         {
           request,
           {request, start_link, []},
           temporary,
-          5000,
+          1000,
           worker,
-          [request, webclient]
+          [request]
         }
       ]
     }

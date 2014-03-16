@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/0]).
 -export([stop/0]).
 
 %% gen_server
@@ -11,50 +11,35 @@
   code_change/3]).
 
 %% API
-start_link(SystemSupervisor) ->
-  gen_server:start_link({local, requests_server}, requests_server, [SystemSupervisor], []).
+start_link() ->
+  gen_server:start_link({local, requests_server}, requests_server, [], []).
 
 %% gen_server callbacks
--record(state, {requests_supervisor, db}).
 stop() ->
   gen_server:call(requests_server, stop).
 
 %% gen_server callbacks
-init([SystemSupervisor]) ->
+init([]) ->
   io:format("Starting requests_server~n"),
-  self() ! {start_requests_supervisor, SystemSupervisor},
-  {ok, #state{db = db:new()}}.
+  {ok, []}.
 
-handle_call({start_link, UserName}, _Pid, S = #state{db = Db}) ->
+handle_call({start_link, UserName}, _Pid, State) ->
   ReferenceId = make_ref(),
-  NewDb = db:write(ReferenceId, {UserName, new_data()}, Db),
-  {reply, {ok, ReferenceId}, S#state{db = NewDb}};
+  db_server:write(ReferenceId, {UserName, new_data()}),
+  {reply, {ok, ReferenceId}, State};
 
-handle_call({ReferenceId, Message}, _Pid, S = #state{requests_supervisor = RequestsSupervisor, db = Db}) ->
-  {ok, {UserName, Data}} = db:read(ReferenceId, Db),
-  {ok, Pid} = supervisor:start_child(RequestsSupervisor, [UserName, Data]),
+handle_call({ReferenceId, Message}, _Pid, State) ->
+  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+  {ok, Pid} = supervisor:start_child(requests_supervisor, [UserName, Data]),
   {Response, NewData} = request:call(Pid, Message),
-  {reply, Response, S#state{db = db:write(ReferenceId, {UserName, NewData}, Db)}};
+  db_server:write(ReferenceId, {UserName, NewData}),
+  {reply, Response, State};
 
-handle_call(stop, _From, Db) ->
-  {stop, normal, ok, Db};
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State};
 
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
-
-handle_info({start_requests_supervisor, SystemSupervisor}, S = #state{}) ->
-  {ok, Pid} = supervisor:start_child(SystemSupervisor,
-    {
-      requests_supervisor,
-      {requests_supervisor, start_link, []},
-      temporary,
-      10000,
-      supervisor,
-      [requests_supervisor, io]
-    }
-  ),
-  link(Pid),
-  {noreply, S#state{requests_supervisor = Pid}};
 
 handle_info(Msg, State) ->
   io:format("Unknown msg: ~p~n", [Msg]),
