@@ -25,7 +25,7 @@ stop(RequestPid) ->
 
 init([UserName, Data]) ->
   io:format("Starting request for username ~p. Pid: ~p~n", [UserName, self()]),
-  {ok, #state{data = Data}}.
+  {ok, #state{username = UserName, data = Data}}.
 
 handle_call({ski, N}, _From, S = #state{data = Data}) ->
   case Data of
@@ -70,7 +70,7 @@ handle_call({view_cart}, _From, S = #state{data = Data}) ->
   end ;
 
 handle_call({billing_address, BillingAddress}, _From, S = #state{data = Data}) ->
-  case error_items(BillingAddress) of
+  case address_verifier:error_items(BillingAddress) of
     [] ->
       case Data of
         {Cart, _, Cc} ->
@@ -100,8 +100,8 @@ handle_call({buy}, _From, S = #state{data = Data}) ->
         [CardNumber, {ExpYear, ExpMonth}] ->
           case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
             true ->
-              case error_items(BillingAddress) of
-                [] ->
+              case address_verifier:is_valid(BillingAddress) of
+                true ->
                   TotalPrice = total_price(Cart),
                   case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
                     {ok, _} ->
@@ -110,7 +110,7 @@ handle_call({buy}, _From, S = #state{data = Data}) ->
                     {error, _} ->
                       reply(buy, {error, credit_info}, S)
                   end ;
-                _ ->
+                false ->
                   reply(buy, {error, billing_info}, S)
               end ;
             false ->
@@ -168,22 +168,3 @@ price(ski, Count) -> 150.0 * Count;
 price(bike, Count) -> 175.0 * Count;
 price(surfboard, Count) -> 175.0 * Count;
 price(skateboard, Count) -> 50.0 * Count.
-
-error_items([{address, Address}, {name, Name}, {city, City}, {country, Country}]) ->
-  Err1 = case Address of
-    {Number, StreetName} when is_integer(Number) and is_list(StreetName) -> [];
-    _ -> [address]
-  end,
-  Err2 = case is_list(Name) of
-    true -> [];
-    false -> [name]
-  end,
-  Err3 = case is_list(City) of
-    true -> [];
-    false -> [city]
-  end,
-  Err4 = case is_list(Country) of
-    true -> [];
-    false -> [country]
-  end,
-  lists:merge([Err1, Err2, Err3, Err4]).

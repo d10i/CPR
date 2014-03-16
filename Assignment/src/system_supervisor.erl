@@ -20,20 +20,20 @@ init([]) ->
       {one_for_all, 1, 60},
       [
         {
-          factory,
-          {factory, start_link, [factory, self()]},
+          requests_server,
+          {requests_server, start_link, [self()]},
           permanent,
           30000,
           worker,
-          [factory]
+          [requests_server]
         },
         {
-          cc,
-          {cc, start_link, [cc, self()]},
+          util_supervisor,
+          {util_supervisor, start_link, []},
           permanent,
           30000,
-          worker,
-          [cc]
+          supervisor,
+          [util_supervisor]
         }
       ]
     }

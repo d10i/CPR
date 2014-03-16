@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2]).
+-export([start_link/0]).
 -export([is_valid/3, transaction/4, add_credit_card/4, stop/0]).
 
 %% gen_server
@@ -11,8 +11,8 @@
   code_change/3]).
 
 %% API
-start_link(Name, Supervisor) ->
-  gen_server:start_link({local, Name}, ?MODULE, [Supervisor], []).
+start_link() ->
+  gen_server:start_link({local, cc}, cc, [], []).
 
 is_valid(BillingAddress, CardNumber, ExpirationDate) ->
   gen_server:call(cc, {is_valid, BillingAddress, CardNumber, ExpirationDate}).
@@ -24,7 +24,7 @@ stop() ->
   gen_server:call(cc, stop).
 
 %% gen_server callbacks
-init(_Supervisor) ->
+init([]) ->
   io:format("Starting cc~n"),
   {ok, db:new()}.
 
@@ -79,11 +79,11 @@ terminate(Reason, _State) ->
   io:format("Terminating cc. Reason: ~p~n", [Reason]),
   ok.
 
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
+
 get_credit_card(CardNumber, Db) ->
   case db:read(CardNumber, Db) of
     {ok, CardDetails} -> {ok, CardDetails};
     {error, _} -> {error, not_found}
   end.
-
-code_change(_OldVsn, State, _Extra) ->
-  {ok, State}.

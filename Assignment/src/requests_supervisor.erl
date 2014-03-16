@@ -10,7 +10,7 @@
 
 %% API
 start_link() ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+  supervisor:start_link({local, requests_supervisor}, requests_supervisor, []).
 
 %% supervisor callbacks
 init([]) ->
@@ -21,7 +21,7 @@ init([]) ->
       {simple_one_for_one, 5, 3600},
       [
         {
-          ppool_worker,
+          request,
           {request, start_link, []},
           temporary,
           5000,
