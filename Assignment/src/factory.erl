@@ -15,7 +15,7 @@ start_link(Name, SystemSupervisor) ->
   gen_server:start_link({local, Name}, ?MODULE, [SystemSupervisor], []).
 
 %% gen_server callbacks
--record(state, {sessionsSupervisor, sessions}).
+-record(state, {requests_supervisor, db}).
 
 start_link(UserName) ->
   gen_server:call(factory, {start_link, UserName}).
@@ -40,49 +40,41 @@ stop() ->
 
 %% gen_server callbacks
 init([SystemSupervisor]) ->
-  self() ! {start_sessions_supervisor, SystemSupervisor},
-  {ok, #state{sessions = db:new()}}.
+  io:format("Starting factory~n"),
+  self() ! {start_requests_supervisor, SystemSupervisor},
+  {ok, #state{db = db:new()}}.
 
-handle_call({start_link, UserName}, _Pid, S = #state{sessionsSupervisor = SessionsSupervisor, sessions = Sessions}) ->
+handle_call({start_link, UserName}, _Pid, S = #state{db = Db}) ->
   ReferenceId = make_ref(),
-  {ok, Pid} = supervisor:start_child(SessionsSupervisor,
-    {
-      session,
-      {session, start_link, [UserName]},
-      temporary,
-      10000,
-      worker,
-      [session]
-    }
-  ),
-%Session = erlang:monitor(process, Pid),
-  {reply, {ok, ReferenceId}, S#state{sessions = db:write(ReferenceId, Pid, Sessions)}};
+  NewDb = db:write(ReferenceId, {UserName, new_data()}, Db),
+  {reply, {ok, ReferenceId}, S#state{db = NewDb}};
 
-handle_call({ReferenceId, Message}, _Pid, S = #state{sessions = Sessions}) ->
-  Session = get_session(ReferenceId, Sessions),
-  {reply, session:call(Session, Message), S};
+handle_call({ReferenceId, Message}, _Pid, S = #state{requests_supervisor = RequestsSupervisor, db = Db}) ->
+  {ok, {UserName, Data}} = db:read(ReferenceId, Db),
+  {ok, Pid} = supervisor:start_child(RequestsSupervisor, [UserName, Data]),
+  {Response, NewData} = request:call(Pid, Message),
+  {reply, Response, S#state{db = db:write(ReferenceId, {UserName, NewData}, Db)}};
 
 handle_call(stop, _From, Db) ->
   cc:stop(),
-% TODO: stop all sessions?
   {stop, normal, ok, Db};
 
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
 
-handle_info({start_sessions_supervisor, SystemSupervisor}, S = #state{}) ->
+handle_info({start_requests_supervisor, SystemSupervisor}, S = #state{}) ->
   {ok, Pid} = supervisor:start_child(SystemSupervisor,
     {
-      session_supervisor,
-      {session_supervisor, start_link, []},
+      requests_supervisor,
+      {requests_supervisor, start_link, []},
       temporary,
       10000,
       supervisor,
-      [session_supervisor]
+      [requests_supervisor, io]
     }
   ),
   link(Pid),
-  {noreply, S#state{sessionsSupervisor = Pid}};
+  {noreply, S#state{requests_supervisor = Pid}};
 
 handle_info(Msg, State) ->
   io:format("Unknown msg: ~p~n", [Msg]),
@@ -91,14 +83,12 @@ handle_info(Msg, State) ->
 handle_cast(_Request, State) ->
   {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+  io:format("Terminating factory. Reason: ~p~n", [Reason]),
   ok.
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
-get_session(ReferenceId, Db) ->
-  case db:read(ReferenceId, Db) of
-    {ok, Session} -> Session;
-    {error, _} -> error
-  end.
+new_data() ->
+  {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.

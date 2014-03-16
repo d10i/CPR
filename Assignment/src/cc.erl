@@ -25,6 +25,7 @@ stop() ->
 
 %% gen_server callbacks
 init(_Supervisor) ->
+  io:format("Starting cc~n"),
   {ok, db:new()}.
 
 handle_call({is_valid, BillingAddress, CardNumber, {ExpYear, ExpMonth}}, _Pid, Db) ->
@@ -74,7 +75,8 @@ handle_cast(_Request, State) ->
 handle_info(_Info, State) ->
   {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+  io:format("Terminating cc. Reason: ~p~n", [Reason]),
   ok.
 
 get_credit_card(CardNumber, Db) ->

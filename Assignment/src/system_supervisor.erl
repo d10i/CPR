@@ -14,6 +14,7 @@ start_link() ->
 
 %% supervisor callbacks
 init([]) ->
+  io:format("Starting system_supervisor~n"),
   {ok,
     {
       {one_for_all, 1, 60},
