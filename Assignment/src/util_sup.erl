@@ -3,17 +3,17 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/2]).
 
 %% supervisor
 -export([init/1]).
 
 %% API
-start_link() ->
-  supervisor:start_link({local, util_sup}, util_sup, []).
+start_link(Node1, Node2) ->
+  supervisor:start_link({local, util_sup}, util_sup, [Node1, Node2]).
 
 %% supervisor callbacks
-init([]) ->
+init([Node1, Node2]) ->
   io:format("Starting util_sup~n"),
   {ok,
     {
@@ -36,12 +36,12 @@ init([]) ->
           [address_verifier]
         },
         {
-          db_server,
-          {db_server, start_link, []},
+          dist_db_server,
+          {dist_db_server, start_link, [Node1, Node2]},
           permanent,
           3000,
           worker,
-          [db_server]
+          [dist_db_server]
         }
       ]
     }

@@ -25,7 +25,7 @@ stop(RequestPid) ->
 -record(state, {reference_id, username, data}).
 
 init([ReferenceId]) ->
-  S = case db_server:read(ReferenceId) of
+  S = case dist_db_server:read(ReferenceId) of
     {ok, {UserName, Data, _Timestamp}} -> #state{reference_id = ReferenceId, username = UserName, data = Data};
     {error, _} -> #state{reference_id = ReferenceId}
   end,
@@ -149,7 +149,8 @@ new_data() ->
   {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.
 
 save_and_reply(Action, Reply, #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  db_server:write(ReferenceId, {UserName, Data, timestamp()}),
+  io:format("~n~n~n***~n~n~nRequest write: ~p -> ~p~n~n~n~n***~n~n~n", [ReferenceId, {UserName, Data, timestamp()}]),
+  dist_db_server:write(ReferenceId, {UserName, Data, timestamp()}),
   webclient:reply(UserName, {Action, Reply}),
   {stop, normal, Reply, ReferenceId}.
 

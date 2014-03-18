@@ -3,17 +3,17 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/2]).
 
 %% supervisor
 -export([init/1]).
 
 %% API
-start_link() ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(Node1, Node2) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, [Node1, Node2]).
 
 %% supervisor callbacks
-init([]) ->
+init([Node1, Node2]) ->
   io:format("Starting system_sup~n"),
   {ok,
     {
@@ -21,7 +21,7 @@ init([]) ->
       [
         {
           requests_server,
-          {requests_server, start_link, []},
+          {requests_server, start_link, [Node1, Node2]},
           permanent,
           1000,
           worker,
@@ -37,7 +37,7 @@ init([]) ->
         },
         {
           util_sup,
-          {util_sup, start_link, []},
+          {util_sup, start_link, [Node1, Node2]},
           permanent,
           1000,
           supervisor,
