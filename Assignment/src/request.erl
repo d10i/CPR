@@ -26,95 +26,81 @@ stop(RequestPid) ->
 
 init([ReferenceId]) ->
   S = case db_server:read(ReferenceId) of
-    {ok, {UserName, Data}} -> #state{reference_id = ReferenceId, username = UserName, data = Data};
+    {ok, {UserName, Data, _Timestamp}} -> #state{reference_id = ReferenceId, username = UserName, data = Data};
     {error, _} -> #state{reference_id = ReferenceId}
   end,
   {ok, S}.
 
 handle_call({start_link, UserName}, _From, S = #state{reference_id = ReferenceId}) ->
-  db_server:write(ReferenceId, {UserName, new_data()}),
-  reply(start_link, {ok, ReferenceId}, S);
+  save_and_reply(start_link, {ok, ReferenceId}, S#state{username = UserName, data = new_data()});
 
-handle_call({ski, N}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
+handle_call({ski, N}, _From, S = #state{data = Data}) ->
   case Data of
     {[{ski, M}, R2, R3, R4], Ba, Cc} ->
       NewCount = max(M + N, 0),
       NewData = {[{ski, NewCount}, R2, R3, R4], Ba, Cc},
       NewStatus = new_status(M, NewCount),
-      db_server:write(ReferenceId, {UserName, NewData}),
-      reply(ski, [NewStatus, {total, NewCount}], S)
+      save_and_reply(ski, [NewStatus, {total, NewCount}], S#state{data = NewData})
   end ;
 
-handle_call({bike, N}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({bike, N}, _From, S = #state{data = Data}) ->
   case Data of
     {[R1, {bike, M}, R3, R4], Ba, Cc} ->
       NewCount = max(M + N, 0),
       NewData = {[R1, {bike, NewCount}, R3, R4], Ba, Cc},
       NewStatus = new_status(M, NewCount),
-      db_server:write(ReferenceId, {UserName, NewData}),
-      reply(bike, [NewStatus, {total, NewCount}], S)
+      save_and_reply(bike, [NewStatus, {total, NewCount}], S#state{data = NewData})
   end ;
 
-handle_call({surfboard, N}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({surfboard, N}, _From, S = #state{data = Data}) ->
   case Data of
     {[R1, R2, {surfboard, M}, R4], Ba, Cc} ->
       NewCount = max(M + N, 0),
       NewData = {[R1, R2, {surfboard, NewCount}, R4], Ba, Cc},
       NewStatus = new_status(M, NewCount),
-      db_server:write(ReferenceId, {UserName, NewData}),
-      reply(surfboard, [NewStatus, {total, NewCount}], S)
+      save_and_reply(surfboard, [NewStatus, {total, NewCount}], S#state{data = NewData})
   end ;
 
-handle_call({skateboard, N}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({skateboard, N}, _From, S = #state{data = Data}) ->
   case Data of
     {[R1, R2, R3, {skateboard, M}], Ba, Cc} ->
       NewCount = max(M + N, 0),
       NewData = {[R1, R2, R3, {skateboard, NewCount}], Ba, Cc},
       NewStatus = new_status(M, NewCount),
-      db_server:write(ReferenceId, {UserName, NewData}),
-      reply(skateboard, [NewStatus, {total, NewCount}], S)
+      save_and_reply(skateboard, [NewStatus, {total, NewCount}], S#state{data = NewData})
   end ;
 
-handle_call({view_cart}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({view_cart}, _From, S = #state{data = Data}) ->
   case Data of
     {Cart, _, _} ->
-      reply(view_cart, {Cart, total_price(Cart)}, S)
+      save_and_reply(view_cart, {Cart, total_price(Cart)}, S)
   end ;
 
-handle_call({billing_address, BillingAddress}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({billing_address, BillingAddress}, _From, S = #state{data = Data}) ->
   case address_verifier:error_items(BillingAddress) of
     [] ->
       case Data of
         {Cart, _, Cc} ->
           NewData = {Cart, BillingAddress, Cc},
-          db_server:write(ReferenceId, {UserName, NewData}),
-          reply(billing_address, ok, S)
+          save_and_reply(billing_address, ok, S#state{data = NewData})
       end ;
     Items ->
-      reply(billing_address, {error, Items}, S)
+      save_and_reply(billing_address, {error, Items}, S)
   end ;
 
-handle_call({credit_card, CardNumber, {ExpYear, ExpMonth}}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({credit_card, CardNumber, {ExpYear, ExpMonth}}, _From, S = #state{data = Data}) ->
   case Data of
     {Cart, BillingAddress, _} ->
       case cc:is_valid(BillingAddress, CardNumber, {ExpYear, ExpMonth}) of
         true ->
           NewData = {Cart, BillingAddress, [CardNumber, {ExpYear, ExpMonth}]},
-          db_server:write(ReferenceId, {UserName, NewData}),
-          reply(credit_card, ok, S);
+          save_and_reply(credit_card, ok, S#state{data = NewData});
         false ->
-          reply(credit_card, {error, card_invalid}, S)
+          save_and_reply(credit_card, {error, card_invalid}, S)
       end
   end ;
 
-handle_call({buy}, _From, S = #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
+handle_call({buy}, _From, S = #state{data = Data}) ->
   case Data of
     {Cart, BillingAddress, Cc} ->
       case Cc of
@@ -126,20 +112,18 @@ handle_call({buy}, _From, S = #state{reference_id = ReferenceId, username = User
                   TotalPrice = total_price(Cart),
                   case cc:transaction(BillingAddress, CardNumber, {ExpYear, ExpMonth}, TotalPrice) of
                     {ok, _} ->
-                      NewData = new_data(),
-                      db_server:write(ReferenceId, {UserName, NewData}),
-                      reply(buy, {ok, {Cart, TotalPrice}}, S);
+                      save_and_reply(buy, {ok, {Cart, TotalPrice}}, S#state{data = new_data()});
                     {error, _} ->
-                      reply(buy, {error, credit_info}, S)
+                      save_and_reply(buy, {error, credit_info}, S)
                   end ;
                 false ->
-                  reply(buy, {error, billing_info}, S)
+                  save_and_reply(buy, {error, billing_info}, S)
               end ;
             false ->
-              reply(buy, {error, credit_info}, S)
+              save_and_reply(buy, {error, credit_info}, S)
           end ;
         [] ->
-          reply(buy, {error, credit_info}, S)
+          save_and_reply(buy, {error, credit_info}, S)
       end
   end;
 
@@ -164,7 +148,8 @@ code_change(_OldVsn, State, _Extra) ->
 new_data() ->
   {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.
 
-reply(Action, Reply, #state{reference_id = ReferenceId, username = UserName}) ->
+save_and_reply(Action, Reply, #state{reference_id = ReferenceId, username = UserName, data = Data}) ->
+  db_server:write(ReferenceId, {UserName, Data, timestamp()}),
   webclient:reply(UserName, {Action, Reply}),
   {stop, normal, Reply, ReferenceId}.
 
@@ -185,3 +170,7 @@ price(ski, Count) -> 150.0 * Count;
 price(bike, Count) -> 175.0 * Count;
 price(surfboard, Count) -> 175.0 * Count;
 price(skateboard, Count) -> 50.0 * Count.
+
+timestamp() ->
+  {MegaSecs, Secs, _MicroSecs} = os:timestamp(),
+  1000000 * MegaSecs + Secs.

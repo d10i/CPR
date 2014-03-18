@@ -21,6 +21,8 @@ stop() ->
 %% gen_server callbacks
 init([]) ->
   io:format("Starting requests_server~n"),
+% Check for old session every 60 seconds
+  timer:send_interval(15000, session_cleanup),
   {ok, []}.
 
 handle_call({start_link, UserName}, _Pid, State) ->
@@ -40,6 +42,17 @@ handle_call(stop, _From, State) ->
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
 
+handle_info(session_cleanup, State) ->
+% Get all sessions that haven't been used for more than 30 minutes
+  Sessions = db_server:select([{{'$1', {'$2', '$3', '$4'}},
+    [{'=<', '$4', timestamp() - 15}],
+    [['$1']]}]),
+
+% Delete all sessions, one by one
+  [db_server:delete(Session) || [Session] <- Sessions],
+
+  {noreply, State};
+
 handle_info(_Msg, State) ->
   {noreply, State}.
 
@@ -52,3 +65,7 @@ terminate(Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
+
+timestamp() ->
+  {MegaSecs, Secs, _MicroSecs} = os:timestamp(),
+  1000000 * MegaSecs + Secs.

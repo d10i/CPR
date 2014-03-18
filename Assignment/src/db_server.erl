@@ -4,7 +4,7 @@
 
 %% API
 -export([start_link/0]).
--export([stop/0, write/2, read/1]).
+-export([stop/0, write/2, read/1, select/1, delete/1]).
 
 %% gen_server
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -20,20 +20,30 @@ write(Key, Element) ->
   gen_server:call(db_server, {write, {Key, Element}}).
 read(Key) ->
   gen_server:call(db_server, {read, Key}).
+select(MatchSpec) ->
+  gen_server:call(db_server, {select, MatchSpec}).
+delete(Key) ->
+  gen_server:call(db_server, {delete, Key}).
 
 %% gen_server callbacks
 init([]) ->
   io:format("Starting db_server~n"),
-  {ok, db:new()}.
+  {ok, pers_db:new()}.
 
 handle_call({write, {Key, Element}}, _From, Db) ->
-  {reply, ok, db:write(Key, Element, Db)};
+  {reply, ok, pers_db:write(Key, Element, Db)};
 
 handle_call({read, Key}, _From, Db) ->
-  {reply, db:read(Key, Db), Db};
+  {reply, pers_db:read(Key, Db), Db};
+
+handle_call({select, MatchSpec}, _From, Db) ->
+  {reply, pers_db:select(MatchSpec, Db), Db};
+
+handle_call({delete, Key}, _From, Db) ->
+  {reply, pers_db:delete(Key, Db), Db};
 
 handle_call(stop, _From, Db) ->
-  db:destroy(Db),
+  pers_db:destroy(Db),
   {stop, normal, ok, Db};
 
 handle_call(_Request, _From, Db) ->
