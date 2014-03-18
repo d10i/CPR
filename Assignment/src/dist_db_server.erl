@@ -33,7 +33,8 @@ delete(Key) ->
 %% gen_server callbacks
 init([Node1, Node2]) ->
   io:format("Starting dist_db_server~n"),
-  {ok, #state{db = pers_db:new("data-" ++ list_to_atom(atom_to_list(node()))), v_clock = 0, nodes = [Node1, Node2]}}.
+  FileName = get_filename(node(), [Node1, Node2]),
+  {ok, #state{db = pers_db:new(FileName), v_clock = 0, nodes = [Node1, Node2]}}.
 
 handle_call({read, Key}, _From, S = #state{db = Db}) ->
   io:format("~n~n~n***~n~n~nread ~p~n~n~n~n***~n~n~n", [Key]),
@@ -53,21 +54,11 @@ handle_call({write, Key, Element}, _From, S = #state{v_clock = VClock, nodes = N
   broadcast({dist_write, Key, Element, Stamp}, Nodes),
   {reply, ok, S#state{v_clock = Stamp}};
 
-handle_call({dist_write, Key, Element, Stamp}, _From, S = #state{db = Db, v_clock = VClock}) ->
-  io:format("~n~n~n***~n~n~ndist_write ~p~n~n~n~n***~n~n~n", [Key]),
-  NewDb = pers_db:write(Key, {Element, Stamp}, Db),
-  {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
-
 handle_call({delete, Key}, _From, S = #state{v_clock = VClock, nodes = Nodes}) ->
   io:format("~n~n~n***~n~n~ndelete ~p~n~n~n~n***~n~n~n", [Key]),
   Stamp = VClock + 1,
   broadcast({dist_del, Key, Stamp}, Nodes),
   {reply, ok, S#state{v_clock = Stamp}};
-
-handle_call({dist_del, Key, Stamp}, _From, S = #state{db = Db, v_clock = VClock}) ->
-  io:format("~n~n~n***~n~n~ndist_del ~p~n~n~n~n***~n~n~n", [Key]),
-  NewDb = pers_db:delete(Key, Db),
-  {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
 
 handle_call(stop, _From, Db) ->
   pers_db:destroy(Db),
@@ -75,6 +66,16 @@ handle_call(stop, _From, Db) ->
 
 handle_call(_Request, _From, Db) ->
   {noreply, Db}.
+
+handle_cast({dist_write, Key, Element, Stamp}, S = #state{db = Db, v_clock = VClock}) ->
+  io:format("~n~n~n***~n~n~ndist_write ~p~n~n~n~n***~n~n~n", [Key]),
+  NewDb = pers_db:write(Key, {Element, Stamp}, Db),
+  {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
+
+handle_cast({dist_del, Key, Stamp}, S = #state{db = Db, v_clock = VClock}) ->
+  io:format("~n~n~n***~n~n~ndist_del ~p~n~n~n~n***~n~n~n", [Key]),
+  NewDb = pers_db:delete(Key, Db),
+  {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
 
 handle_cast(_Request, Db) ->
   {noreply, Db}.
@@ -90,6 +91,11 @@ code_change(_OldVsn, Db, _Extra) ->
 
 broadcast(Msg, Nodes) ->
   io:format("~n~n~n***~n~n~nbroadcast ~p -> ~p~n~n~n~n***~n~n~n", [Msg, Nodes]),
-%gen_server:multi_call(Nodes, dist_db_server, Msg),
-  [gen_server:call({dist_db_server, Node}, Msg) || Node <- Nodes],
+  gen_server:abcast(Nodes, dist_db_server, Msg),
   ok.
+
+get_filename(Node, [Node1, Node2]) ->
+  case Node of
+    Node1 -> "data1";
+    Node2 -> "data2"
+  end.

@@ -40,7 +40,6 @@ stop() ->
 %% gen_server callbacks
 init([Node1, Node2]) ->
   io:format("Starting requests_server~n"),
-% Check for old session every 60 seconds
 
   OtherNode = other_node(Node1, Node2),
   io:format("Other node: ~p~n", [OtherNode]),
@@ -55,16 +54,12 @@ init([Node1, Node2]) ->
   case global:whereis_name(requests_server) of
     undefined ->
 % This has been registered as the primary node
-      global:register_name(requests_server, self()),
-      io:format("Node ~p registered as primary~n", [node()]);
-    _ ->
+      set_primary();
+    Pid ->
 % This is the backup node
-      io:format("Node ~p registered as backup~n", [node()]),
-      erlang:monitor_node(OtherNode, true)
+      set_backup(Pid)
   end,
 
-
-%timer:send_interval(15000, session_cleanup),
   {ok, [Node1, Node2]}.
 
 handle_call({start_link, UserName}, _Pid, State) ->
@@ -84,16 +79,15 @@ handle_call(stop, _From, State) ->
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
 
-handle_info({nodedown, Node}, S) ->
-  io:format("Node ~p is monitoring and received nodedown from ~p~n", [node(), Node]),
-  io:format("Now becoming primary~n"),
-  global:register_name(requests_server, self()),
+handle_info({'DOWN', _Ref, process, Pid, _}, S) ->
+  io:format("Node ~p is monitoring and received 'DOWN' from ~p~n", [node(), Pid]),
+  set_primary(),
   {noreply, S};
 
 handle_info(session_cleanup, State) ->
 % Get all sessions that haven't been used for more than 30 minutes
   Sessions = dist_db_server:select([{{'$1', {{'$2', '$3', '$4'}, '$5'}},
-    [{'=<', '$4', timestamp() - 15}],
+    [{'=<', '$4', timestamp() - 30 * 60}],
     [['$1']]}]),
 
 % Delete all sessions, one by one
@@ -123,3 +117,13 @@ other_node(Node1, Node2) ->
     Node1 -> Node2;
     Node2 -> Node1
   end.
+
+set_primary() ->
+  global:register_name(requests_server, self()),
+% Check for old sessions every 60 seconds
+  timer:send_interval(60000, session_cleanup),
+  io:format("Node ~p registered as primary~n", [node()]).
+
+set_backup(PrimaryServerPid) ->
+  io:format("Node ~p registered as backup~n", [node()]),
+  erlang:monitor(process, PrimaryServerPid).
