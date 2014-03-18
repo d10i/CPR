@@ -21,7 +21,6 @@ start_link(Node1, Node2) ->
 stop() ->
   gen_server:call(dist_db_server, stop).
 write(Key, Element) ->
-  io:format("~n~n~n***~n~n~nASDASD ~p~n~n~n~n***~n~n~n", [Key]),
   gen_server:call(dist_db_server, {write, Key, Element}).
 read(Key) ->
   gen_server:call(dist_db_server, {read, Key}).
@@ -37,7 +36,6 @@ init([Node1, Node2]) ->
   {ok, #state{db = pers_db:new(FileName), v_clock = 0, nodes = [Node1, Node2]}}.
 
 handle_call({read, Key}, _From, S = #state{db = Db}) ->
-  io:format("~n~n~n***~n~n~nread ~p~n~n~n~n***~n~n~n", [Key]),
   Res = case pers_db:read(Key, Db) of
     {ok, {Element, _Stamp}} -> {ok, Element};
     X -> X
@@ -45,17 +43,14 @@ handle_call({read, Key}, _From, S = #state{db = Db}) ->
   {reply, Res, S};
 
 handle_call({select, MatchSpec}, _From, S = #state{db = Db}) ->
-  io:format("~n~n~n***~n~n~nselect ~p~n~n~n~n***~n~n~n", [MatchSpec]),
   {reply, pers_db:select(MatchSpec, Db), S};
 
 handle_call({write, Key, Element}, _From, S = #state{v_clock = VClock, nodes = Nodes}) ->
-  io:format("~n~n~n***~n~n~nwrite ~p~n~n~n~n***~n~n~n", [Key]),
   Stamp = VClock + 1,
   broadcast({dist_write, Key, Element, Stamp}, Nodes),
   {reply, ok, S#state{v_clock = Stamp}};
 
 handle_call({delete, Key}, _From, S = #state{v_clock = VClock, nodes = Nodes}) ->
-  io:format("~n~n~n***~n~n~ndelete ~p~n~n~n~n***~n~n~n", [Key]),
   Stamp = VClock + 1,
   broadcast({dist_del, Key, Stamp}, Nodes),
   {reply, ok, S#state{v_clock = Stamp}};
@@ -68,12 +63,10 @@ handle_call(_Request, _From, Db) ->
   {noreply, Db}.
 
 handle_cast({dist_write, Key, Element, Stamp}, S = #state{db = Db, v_clock = VClock}) ->
-  io:format("~n~n~n***~n~n~ndist_write ~p~n~n~n~n***~n~n~n", [Key]),
   NewDb = pers_db:write(Key, {Element, Stamp}, Db),
   {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
 
 handle_cast({dist_del, Key, Stamp}, S = #state{db = Db, v_clock = VClock}) ->
-  io:format("~n~n~n***~n~n~ndist_del ~p~n~n~n~n***~n~n~n", [Key]),
   NewDb = pers_db:delete(Key, Db),
   {noreply, S#state{db = NewDb, v_clock = 1 + max(VClock, Stamp)}};
 
@@ -90,7 +83,6 @@ code_change(_OldVsn, Db, _Extra) ->
   {ok, Db}.
 
 broadcast(Msg, Nodes) ->
-  io:format("~n~n~n***~n~n~nbroadcast ~p -> ~p~n~n~n~n***~n~n~n", [Msg, Nodes]),
   gen_server:abcast(Nodes, dist_db_server, Msg),
   ok.
 

@@ -42,7 +42,6 @@ init([Node1, Node2]) ->
   io:format("Starting requests_server~n"),
 
   OtherNode = other_node(Node1, Node2),
-  io:format("Other node: ~p~n", [OtherNode]),
 
 % Connects to other node
   {factory, OtherNode} ! ping,
@@ -122,8 +121,8 @@ set_primary() ->
   global:register_name(requests_server, self()),
 % Check for old sessions every 60 seconds
   timer:send_interval(60000, session_cleanup),
-  io:format("Node ~p registered as primary~n", [node()]).
+  io:format("Node ~p is primary~n", [node()]).
 
 set_backup(PrimaryServerPid) ->
-  io:format("Node ~p registered as backup~n", [node()]),
+  io:format("Node ~p is backup~n", [node()]),
   erlang:monitor(process, PrimaryServerPid).
