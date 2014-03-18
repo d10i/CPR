@@ -1,4 +1,4 @@
--module(system_supervisor).
+-module(system_sup).
 
 -behaviour(supervisor).
 
@@ -14,7 +14,7 @@ start_link() ->
 
 %% supervisor callbacks
 init([]) ->
-  io:format("Starting system_supervisor~n"),
+  io:format("Starting system_sup~n"),
   {ok,
     {
       {one_for_one, 5, 60},
@@ -28,20 +28,20 @@ init([]) ->
           [requests_server]
         },
         {
-          requests_supervisor,
-          {requests_supervisor, start_link, []},
+          requests_sup,
+          {requests_sup, start_link, []},
           permanent,
           1000,
           supervisor,
-          [requests_supervisor]
+          [requests_sup]
         },
         {
-          util_supervisor,
-          {util_supervisor, start_link, []},
+          util_sup,
+          {util_sup, start_link, []},
           permanent,
           1000,
           supervisor,
-          [util_supervisor]
+          [util_sup]
         }
       ]
     }

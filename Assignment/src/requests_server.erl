@@ -25,14 +25,13 @@ init([]) ->
 
 handle_call({start_link, UserName}, _Pid, State) ->
   ReferenceId = make_ref(),
-  db_server:write(ReferenceId, {UserName, new_data()}),
-  {reply, {ok, ReferenceId}, State};
+  {ok, Pid} = supervisor:start_child(requests_sup, [ReferenceId]),
+  Response = request:call(Pid, {start_link, UserName}),
+  {reply, Response, State};
 
 handle_call({ReferenceId, Message}, _Pid, State) ->
-  {ok, {UserName, Data}} = db_server:read(ReferenceId),
-  {ok, Pid} = supervisor:start_child(requests_supervisor, [UserName, Data]),
-  {Response, NewData} = request:call(Pid, Message),
-  db_server:write(ReferenceId, {UserName, NewData}),
+  {ok, Pid} = supervisor:start_child(requests_sup, [ReferenceId]),
+  Response = request:call(Pid, Message),
   {reply, Response, State};
 
 handle_call(stop, _From, State) ->
@@ -41,8 +40,7 @@ handle_call(stop, _From, State) ->
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
 
-handle_info(Msg, State) ->
-  io:format("Unknown msg: ~p~n", [Msg]),
+handle_info(_Msg, State) ->
   {noreply, State}.
 
 handle_cast(_Request, State) ->
@@ -54,6 +52,3 @@ terminate(Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
-
-new_data() ->
-  {[{ski, 0}, {bike, 0}, {surfboard, 0}, {skateboard, 0}], [], []}.

@@ -58,23 +58,35 @@ code_change(_OldVsn, State, _Extra) ->
 
 % TODO: this can probably be improved
 error_items_internal([{address, Address}, {name, Name}, {city, City}, {country, Country}]) ->
-  Err1 = case Address of
-    {Number, StreetName} when is_integer(Number) and is_list(StreetName) -> [];
-    _ -> [address]
-  end,
-  Err2 = case is_list(Name) of
-    true -> [];
-    false -> [name]
-  end,
-  Err3 = case is_list(City) of
-    true -> [];
-    false -> [city]
-  end,
-  Err4 = case is_list(Country) of
-    true -> [];
-    false -> [country]
-  end,
+  Err1 = verify_address(Address),
+  Err2 = verify_name(Name),
+  Err3 = verify_city(City),
+  Err4 = verify_country(Country),
   lists:merge([Err1, Err2, Err3, Err4]);
 
 error_items_internal(_) ->
   [address, name, city, country].
+
+verify_address(Address) ->
+  case Address of
+    {Number, StreetName} when is_integer(Number) and is_list(StreetName) -> [];
+    _ -> [address]
+  end.
+
+verify_name(Name) ->
+  case is_list(Name) of
+    true -> [];
+    false -> [name]
+  end.
+
+verify_city(City) ->
+  case is_list(City) of
+    true -> [];
+    false -> [city]
+  end.
+
+verify_country(Country) ->
+  case is_list(Country) of
+    true -> [];
+    false -> [country]
+  end.

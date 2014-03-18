@@ -5,6 +5,9 @@
 
 reply(UserName, Message) ->
   case Message of
+    {start_link, _} ->
+      ok;
+
     {ski, [NewStatus, {total, NewCount}]} ->
       output_action_description(NewStatus, NewCount, "skis", UserName),
       ok;

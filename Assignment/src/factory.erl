@@ -8,11 +8,10 @@
 
 % application callbacks
 start(_Type, _Args) ->
-  system_supervisor:start_link().
+  system_sup:start_link().
 
 stop(_State) ->
   ok.
-
 
 %% API
 start_link(UserName) ->

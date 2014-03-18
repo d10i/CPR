@@ -1,4 +1,4 @@
--module(util_supervisor).
+-module(util_sup).
 
 -behaviour(supervisor).
 
@@ -10,11 +10,11 @@
 
 %% API
 start_link() ->
-  supervisor:start_link({local, util_supervisor}, util_supervisor, []).
+  supervisor:start_link({local, util_sup}, util_sup, []).
 
 %% supervisor callbacks
 init([]) ->
-  io:format("Starting util_supervisor~n"),
+  io:format("Starting util_sup~n"),
   {ok,
     {
       {one_for_one, 5, 60},
